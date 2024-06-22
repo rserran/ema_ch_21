@@ -1,0 +1,130 @@
+---
+title: "Explanatory Model Analysis"
+author: "R. J. Serrano"
+date: "2024-06-20"
+output: 
+     html_document:
+          df_print: paged
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE,
+                      message = FALSE, dpi = 180, 
+                      fig.width = 8, fig.height = 5)
+
+suppressMessages(library(tidyverse))
+library(scales)
+library(DALEX)
+library(DataExplorer)
+theme_set(theme_bw())
+```
+
+## Chapter 21 - FIFA 19 Dataset
+
+The objective is to explore the FIFA 19 dataset included in the `DALEX` package [original dataset](https://www.kaggle.com/datasets/javagarm/fifa-19-complete-player-dataset)
+
+```{r fifa19}
+load('./data/fifa19small.rda')
+
+fifa <- fifa19small |> 
+     rename(Reputation = 9) |> 
+     remove_rownames() |> 
+     column_to_rownames(var = "Name")
+
+fifa
+```
+
+First look at datatset (skim)
+```{r skim}
+skimr::skim(fifa)
+```
+
+Number of observations (rows): 16,924
+
+Number of variables (columns): 44 (index = player's name)
+
+Number of numeric/continuous variables: 41
+
+Number of categorical variables: 3 (`Club`, `Position`, `Preferred.Foot`)
+
+Number of missing values: 0
+
+Target variable (response): `value_eur`
+
+Histogram of player's value (`Value.EUR`)
+```{r histogram-value-eur}
+fifa |> 
+     ggplot(aes(Value.EUR)) + 
+     geom_histogram(fill = 'steelblue')
+```
+
+Histogram of log-transformed player's value (`Value.EUR`)
+```{r log-trans-histogram-value-eur}
+fifa |> 
+     ggplot(aes(log10(Value.EUR + 0.1))) + 
+     geom_histogram(fill = 'steelblue')
+```
+
+Histograms for selected variables (figure 21.2)
+```{r selected-vars-histograms}
+fifa |> 
+     select(Age, BallControl, Dribbling, Reactions) |> 
+     plot_histogram(nrow = 2L, ncol = 2L)
+```
+
+1. Most players' age fall between 20 and 40 years old.
+2. Smaller modes in `BallControl` and `Dribbling` are due to goalkeepers.
+
+Scatterplots for selected variables (figure 21.3)
+```{r selected-vars-scatterplots}
+fifa19small4long <- fifa19small |> 
+     select(Value.EUR, Age, BallControl, Dribbling, Reactions) |> 
+     gather(variable, value, -Value.EUR)
+
+fifa19small4long |> 
+     ggplot(aes(value, Value.EUR)) + 
+     geom_point() + 
+     geom_smooth(linewidth = 2, se = FALSE, color = 'steelblue') + 
+     theme_drwhy() + 
+     facet_wrap(~variable, ncol = 2, scales = "free") + 
+     scale_y_continuous("Value in Euro", trans = "log10", labels = dollar_format(suffix = "€", prefix = "")) + 
+     scale_x_continuous("") + 
+     ggtitle("Scatterplots for players' characteristics","") + 
+     theme_ema()
+```
+
+Scatterplot matrix for selected variables
+```{r selected-vars-scatterplot-matrix}
+library(GGally)
+
+fifa19small |> 
+     select(Age, BallControl, Dribbling, Reactions) |> 
+     ggpairs(
+          diag = list(continuous = "barDiag"), 
+          lower = list(continuous = wrap("smooth", method = "loess", colour = 'steelblue'))
+          ) + 
+     theme_drwhy() + 
+     ggtitle("Scatterplot matrix for players' characteristics","") + 
+     theme_ema()
+```
+
+Correlation funnel
+```{r corr-funnel}
+library(correlationfunnel)
+
+# binarized features
+binarized_tbl <- fifa %>% 
+     select(-Club, -Overall) |> 
+     binarize(n_bins = 5, thresh_infreq = 0.01, name_infreq = 'Other', one_hot = TRUE)
+
+# correlate to target ('Value.EUR__3100000_Inf')
+corr_tbl <- binarized_tbl %>% 
+     correlate(Value.EUR__3100000_Inf)
+
+# plot correlation
+corr_tbl %>% 
+     plot_correlation_funnel(interactive = TRUE)
+```
